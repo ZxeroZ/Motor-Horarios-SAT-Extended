@@ -1,6 +1,6 @@
 <div align="center">
-  <h1>🏫 Motor de Horarios CP-SAT</h1>
-  <p><em>Un motor de optimización matemática para la generación de horarios escolares.</em></p>
+  <h1>Motor de Horarios Extended</h1>
+  <p><em>Generador de horarios escolares con optimización matemática.</em></p>
 
   <p>
     <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"/>
@@ -10,134 +10,159 @@
     <img src="https://img.shields.io/badge/SQLite-07405E?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite"/>
   </p>
   <p>
-    <em>Basado en el <a href="https://github.com/Clatt4noia/timetable-engine">timetable-engine original por Clatt4noia</a></em>
+    <em>Fork extendido del <a href="https://github.com/Clatt4noia/timetable-engine">timetable-engine original por Clatt4noia</a></em>
   </p>
 </div>
 
 ---
 
-## 📑 Tabla de Contenidos
+## De qué va esto
 
-1. [Acerca del Proyecto](#-acerca-del-proyecto)
-2. [Arquitectura y Componentes](#-arquitectura-y-componentes)
-3. [Restricciones (Constraints)](#️-restricciones-del-motor)
-4. [Modelo Matemático](#-modelo-matemático)
-5. [Instalación y Configuración](#-instalación-y-configuración)
+Básicamente es una herramienta para generar horarios de clases automáticamente. Le tirás los datos del colegio (profesores, cursos, secciones, disponibilidad) y el motor busca la mejor combinación posible usando programación de restricciones.
+
+No es un CRUD más — la parte interesante es el solver que resuelve un problema NP-Hard con OR-Tools. El backend maneja la lógica de negocio y el frontend muestra todo bonito.
 
 ---
 
-## 💡 Acerca del Proyecto
+## Cómo está armado
 
-Este proyecto implementa un motor de optimización de horarios escolares utilizando **Google OR-Tools (Constraint Programming - SAT)**. Está diseñado bajo una arquitectura modular y desacoplada, lo que permite su funcionamiento tanto de forma autónoma como su integración dentro de un framework web moderno y responsivo.
+### Backend (Python + FastAPI)
+
+La API está organizada por dominios en routers separados:
+
+```
+backend/
+├── main.py              → Configuración de la app, CORS, lifespan
+├── database.py          → Conexión a SQLite
+├── models.py            → 15+ tablas (SQLModel)
+├── schemas.py           → Validación de inputs (Pydantic)
+├── engine_connector.py  → Puente entre la BD y el motor matemático
+├── exceptions.py        → Errores personalizados
+├── config.py            → Variables de entorno
+├── logging_config.py    → Logs configurados
+└── routes/
+    ├── auth.py          → Login
+    ├── infra.py         → Sedes, Turnos, Bloques, Grados
+    ├── academic.py      → Cursos, Profesores, Secciones, Planes
+    ├── availability.py  → Disponibilidad y Preferencias docentes
+    └── schedule.py      → Generación, historial, snapshots
+```
+
+**Lo que hace cada parte:**
+- `engine_connector.py` es el más heavy — lee toda la BD, la transforma al formato que entiende el motor, y luego guarda el resultado
+- `routes/schedule.py` maneja la generación con progreso en tiempo real (threading)
+- `schemas.py` valida que no mandes basura al backend (campos vacíos, IDs que no existen, etc.)
+
+### Motor matemático (el corazón)
+
+```
+engine/
+├── loader.py       → Carga los datos del JSON
+├── validators.py   → Validación antes de procesar
+├── preprocessor.py → Convierte datos jerárquicos a estructuras matemáticas
+├── model.py        → Construye el modelo CP-SAT con restricciones
+├── solver.py       → Ejecuta OR-Tools (máx 60 segundos)
+├── exporter.py     → Formatea la solución
+└── metrics.py      → Calcula métricas post-ejecución
+```
+
+El solver busca maximizar un puntaje que suma: que se asignen todos los cursos (+10,000), que caigan en el horario preferido del profesor (+500), y que los bloques sean contiguos (+100).
+
+### Frontend (React + Vite)
+
+```
+frontend/src/
+├── App.jsx              → Componente principal (estado + lógica)
+├── index.css            → Estilos con glassmorphism
+└── components/
+    ├── Toast.jsx        → Notificaciones emergentes
+    ├── LoginForm.jsx    → Pantalla de login
+    ├── Sidebar.jsx      → Navegación lateral
+    ├── ScheduleGrid.jsx → La malla horaria como tal
+    └── HistoryPanel.jsx → Histórico de horarios generados
+```
+
+**Features del frontend:**
+- Tema claro con efecto glass (blur sobre gradiente)
+- Material Icons en vez de emojis
+- Paginación y búsqueda en todas las tablas de administración
+- Toasts para feedback de acciones
+- Confirmación antes de borrar
+- Edición inline de registros
+- Barra de progreso real cuando se genera el horario
+- Historial de todos los horarios generados (cargar, renombrar, eliminar)
+
+---
+
+## Restricciones del motor
+
+El solver respeta estas reglas:
+
+**Restricciones duras (no se pueden romper):**
+- Un profesor no puede estar en dos clases al mismo tiempo
+- Un profesor solo se asigna si está disponible en ese día/horario/sede
+- No se puede dictar en dos sedes en bloques consecutivos (tiempo de traslado)
+- Límite de horas por área de conocimiento por día
+- Si un curso se divide en partes, no caen el mismo día
+
+**Restricciones blandas (el intenta pero no garantiza):**
+- Ubicar las clases en el horario que el profesor prefiere
 
 ---
 
-## 🏗 Arquitectura y Componentes
+## Para levantarlo
 
-Este sistema está dividido en dos grandes pilares tecnológicos: el **Backend API** (Gestión de datos y reglas de negocio) y el **Motor Matemático** (Resolución NP-Hard).
+```bash
+# Clonar
+git clone https://github.com/ZxeroZ/Motor-Horarios-SAT-Extended.git
+cd Motor-Horarios-SAT-Extended
 
-### 🖥️ 1. Pilar Backend y API (Gestión de Datos)
-Toda la capa de servicios, persistencia y orquestación está construida en **FastAPI** y **SQLModel (SQLite)**. Esta capa es fundamental, ya que el motor matemático no puede consumir datos crudos.
+# Entorno virtual
+python -m venv venv
+.\venv\Scripts\activate  # Windows
+source venv/bin/activate  # Linux/Mac
 
-| Componente | Descripción |
-|---|---|
-| 🗄️ **`models.py`** | Diseño de la Base de Datos Relacional. Implementa más de 15 tablas normalizadas para manejar Sedes, Cursos, Disponibilidad Hiper-Granular y Restricciones. |
-| 🛡️ **`main.py` (API)** | Expone endpoints RESTful robustos para realizar CRUD sobre las entidades académicas y actúa como pasarela segura para desencadenar el motor. |
-| 🔌 **`engine_connector.py`** | **El puente vital.** Se encarga de leer la base de datos relacional, aplanar las estructuras complejas y traducir los registros SQL a los diccionarios matriciales que el motor necesita. |
-| 💾 **Persistencia** | Se encarga de destruir horarios obsoletos y persistir eficientemente el resultado matemático (`HorarioFinal`) mapeándolo a los bloques visuales. |
+# Dependencias
+pip install -r requirements.txt
 
-### 🧠 2. Pilar Motor Matemático (OR-Tools)
-Pipeline secuencial de procesamiento y búsqueda:
+# Base de datos (esquema en blanco)
+sqlite3 database.db < esquema_bd.sql
 
-| Módulo | Descripción |
-|---|---|
-| 🔌 **`loader.py` & `validators.py`** | Ingiere los datos, valida la integridad referencial y carga la memoria estructural. |
-| ⚙️ **`preprocessor.py`** | Traductor algorítmico. Convierte datos jerárquicos a diccionarios y conjuntos matemáticos ($O(1)$). |
-| 🧠 **`model.py`** | El cerebro matemático. Genera configuraciones, inyecta restricciones y construye la Función Objetivo. |
-| 🚀 **`solver.py`** | Invoca a los *workers* de OR-Tools para explorar el árbol de decisiones y decodificar la solución. |
-| 📤 **`exporter.py`** | Formatea la salida bruta del solver en un formato presentable y ordenado. |
-| 📊 **`metrics.py`** | Módulo analítico post-ejecución. Evalúa la calidad, calculando métricas de infraestructura y horas. |
+# Backend (puerto 8000)
+uvicorn backend.main:app --reload
 
----
+# Frontend (puerto 5173)
+cd frontend
+npm install
+npm run dev
+```
 
-## ⚖️ Restricciones del Motor
+La base de datos viene vacía. Los datos se cargan desde el panel de administración en el frontend, o podés usar el seeder con un JSON de prueba.
 
-El motor opera bajo un riguroso set de reglas matemáticas para asegurar horarios humanos y factibles:
-
-### 🔴 Restricciones Duras (Hard Constraints)
-- **Disponibilidad Matricial:** Control hiper-granular a nivel de (Día $\rightarrow$ Turno $\rightarrow$ Sede $\rightarrow$ Bloques).
-- **Validación Estricta:** Un profesor solo se asigna si los bloques requeridos son un subconjunto estricto de su disponibilidad en la sede adecuada.
-- **Exclusividad Absoluta:** Un profesor/sección no puede estar en dos clases simultáneamente.
-- **Tiempo de Traslado (Travel Time):** Prohíbe que un profesor dicte en sedes distintas en bloques consecutivos sin espacio natural de traslado.
-- **Límite de Sobrecarga:** Limita las horas que una sección recibe de una misma "Área de Conocimiento" en un mismo día.
-- **Repelencia de Días:** Si un curso de 3h se divide en `[2h, 1h]`, estos fragmentos jamás caerán el mismo día.
-
-### 🟢 Restricciones Blandas (Soft Constraints)
-- **Disponibilidad Preferente:** Zonas horarias "ideales" para el docente. El motor premia la asignación en estas franjas sin obligarlas estrictamente.
+**Variables de entorno (opcional):** Copiá `.env.example` a `.env` y configurá lo que necesites.
 
 ---
 
-## 📐 Modelo Matemático
+## Tests
 
-A diferencia de modelos básicos de franjas unitarias, este motor resuelve **Bloques Contiguos** dinámicos.
+```bash
+python -m pytest tests/ -v
+```
 
-### Función Objetivo por Recompensas
-El motor maximiza el siguiente puntaje global en su árbol de búsqueda:
-
-1. **🏆 Asignación Primordial (+10,000 pts):** Prioridad absoluta para que no queden cursos sin dictarse.
-2. **⭐ Preferencia Docente (+500 pts / bloque):** Premia ubicar la clase en el horario ideal del maestro.
-3. **🧱 Contigüidad (+100 pts vs +10 pts):** Cursos impartidos sin fragmentarse ganan mayor puntaje.
-
-> **💡 El Sacrificio Calculado:** Dado que *Preferencia > Contigüidad*, el motor sacrificará tener bloques juntos (los romperá) si eso permite colocar las horas dentro del horario preferente del docente.
-
+Hay 37 tests de integración que cubren los endpoints principales: CRUD de infraestructura, validación de inputs, duplicados, y el flujo de generación.
 
 ---
 
-## 🚀 Instalación y Configuración
+## Cosas que me gustaría mejorar a futuro
 
-> **Nota para Colaboradores:** La base de datos real y los scripts de poblamiento automatizado **no** se incluyen en el repositorio por políticas de privacidad de la data. 
-
-1. **Clonar el repositorio**
-   ```bash
-   git clone https://github.com/ZxeroZ/Motor-Horarios-SAT.git
-   cd Motor-Horarios-SAT
-   ```
-
-2. **Crear y activar el entorno virtual**
-   ```bash
-   python -m venv venv
-   # En Windows:
-   .\venv\Scripts\activate
-   # En Linux/Mac:
-   source venv/bin/activate
-   ```
-
-3. **Instalar dependencias**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Inicializar la Base de Datos**
-   El repositorio no incluye datos reales. Para generar el esquema de SQLite en blanco, ejecuta:
-   ```bash
-   sqlite3 database.db < esquema_bd.sql
-   ```
-   *(Deberás insertar tus datos de prueba usando el panel de Administración en el Frontend).*
-
-5. **Levantar el Backend (API)**
-   ```bash
-   uvicorn backend.main:app --reload
-   ```
-
-6. **Levantar el Frontend (React)**
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
+- [ ] Editor visual de horarios (arrastrar bloques)
+- [ ] Validación en tiempo real al editar
+- [ ] Exportar a PDF
+- [ ] Soporte para múltiples colegios
+- [ ] Dashboard con estadísticas de uso
 
 ---
+
 <div align="center">
-  <i>Construido con lógica, matemáticas y mucha paciencia ☕</i><br>
-  <!-- Backend by AG_zero -->
+  <i>Armado con paciencia, café y algo de matemáticas</i>
 </div>
