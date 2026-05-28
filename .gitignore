@@ -22,3 +22,6 @@ database.db
 *.sqlite
 populate_from_json.py
 *.txt
+
+# Variables de entorno
+.env
