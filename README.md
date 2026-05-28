@@ -28,14 +28,6 @@
 
 ---
 
-## 📌 De qué va esto
-
-Básicamente es una herramienta para generar horarios de clases automáticamente. Le tirás los datos del colegio (profesores, cursos, secciones, disponibilidad) y el motor busca la mejor combinación posible usando programación de restricciones.
-
-No es un CRUD más — la parte interesante es el solver que resuelve un problema NP-Hard con OR-Tools. El backend maneja la lógica de negocio y el frontend muestra todo bonito.
-
----
-
 ## 🏗 Cómo está armado
 
 ### Backend (Python + FastAPI)
@@ -121,14 +113,43 @@ frontend/src/
 
 ## ✨ Features
 
-### Backend
+### Backend (by zero)
 
-- <img src="https://img.shields.io/badge/-REST_API-blue" alt="REST"/> CRUD completo para todas las entidades académicas
-- <img src="https://img.shields.io/badge/-Validación-green" alt="Validación"/> Input validation con Pydantic + FK checks
-- <img src="https://img.shields.io/badge/-Progreso_Real-orange" alt="Progreso"/> Barra de progreso real con threading
-- <img src="https://img.shields.io/badge/-Historial-purple" alt="Historial"/> Sistema de snapshots con versionado
-- <img src="https://img.shields.io/badge/-Logging-red" alt="Logging"/> Logs configurados por nivel
-- <img src="https://img.shields.io/badge/-Config-Env-yellow" alt="Config"/> Variables de entorno para distintos ambientes
+El backend no es solo un CRUD básico — tiene varias capas de lógica que lo hacen bastante completo para lo que necesitamos:
+
+**📊 Gestión de datos:**
+- CRUD completo para todas las entidades del dominio: Sedes, Turnos, Bloques, Grados, Secciones, Áreas, Cursos, Profesores, Planes de Estudio, Disponibilidad y Preferencias
+- Cada endpoint tiene validación de inputs con Pydantic — no podés mandar campos vacíos, IDs que no existen, ni valores fuera de rango
+- Las foreign keys se validan antes de hacer el INSERT/UPDATE, así que no vas a tener errores de integridad referencial a mitad de la carga
+
+**🔐 Seguridad y configuración:**
+- CORS configurable por ambiente (desarrollo vs producción) — ya no está hardcodeado como `*`
+- Variables de entorno para todo: URL de la BD,logging, orígenes permitidos
+- Logging configurado por nivel — los queries de SQL se silencian en producción
+
+**🧠 Generación de horarios:**
+- El endpoint de generación corre en un **thread separado** para no bloquear la API
+- Barra de progreso real — el frontend puede consultar en qué paso va el motor (extrayendo datos, validando, preprocesando, modelando, resolviendo, guardando)
+- Cada paso reporta progreso con porcentaje y mensaje descriptivo
+- Timeout de seguridad de 120 segundos en el frontend
+
+**🕰️ Sistema de historial (versionado):**
+- Cuando generás un horario, se guarda automáticamente un **snapshot** con el JSON completo del resultado
+- Cada snapshot tiene: nombre, fecha, estado (OPTIMAL/FEASIBLE/INFEASIBLE), tiempo de resolución, cantidad de asignaciones
+- Puedes cargar cualquier snapshot anterior como horario activo — se reescribe la tabla `horario_final` con esos datos
+- Puedes renombrar los snapshots para identificarlos mejor
+- Puedes eliminar los que ya no necesitás
+- El sistema trackea cuál snapshot está activo (el que se muestra en la malla)
+
+**⚠️ Manejo de errores:**
+- Excepciones personalizadas por tipo: ValidationError (422), EngineError (400), NotFoundError (404), ConflictError (409)
+- Handler global de excepciones en FastAPI — cualquier error no controlado devuelve un 500 con mensaje genérico (no exponemos stack traces al frontend)
+- Los errores del motor se distinguen de los errores de validación y de los errores de BD
+
+**🧪 Tests:**
+- 37 tests de integración con pytest
+- Cada test usa una BD SQLite en memoria (no toca la BD real)
+- Cubren: CRUD de infraestructura, validación de inputs, detección de duplicados, FK validation, login, y el flujo de generación
 
 ### Frontend
 
@@ -230,10 +251,6 @@ Motor-Horarios-SAT-Extended/
 
 <div align="center">
 
-![Footer](https://img.shields.io/badge/Hecho_con_☕-para_el_colegio-6366f1?style=for-the-badge)
-
-<br/>
-
-<sub>Construido con lógica, matemáticas y mucho café</sub>
+![Backend by zero](https://img.shields.io/badge/Backend_by-Zero-purple?style=for-the-badge&logo=github&logoColor=white)
 
 </div>
